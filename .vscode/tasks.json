@@ -32,7 +32,7 @@
             "label": "3. TensorBoard 열기 (학습 곡선, http://localhost:6006)",
             "type": "process",
             "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-            "args": ["-m", "tensorboard.main", "--logdir", "runs", "--port", "6006"],
+            "args": ["-m", "tensorboard.main", "--logdir", "runs", "--port", "6006", "--reload_interval", "5"],
             "options": { "cwd": "${workspaceFolder}" },
             "isBackground": true,
             "problemMatcher": []

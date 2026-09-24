@@ -75,6 +75,7 @@ def train(
     batch = T * N
     mb_size = batch // cfg.minibatches
     ep_len, ep_ok = [], []
+    n_logged = 0  # ep_len 중 TensorBoard 에 이미 기록한 개수
     t0 = time.time()
     log(f"device: {device}" + (f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else ""))
 
@@ -141,28 +142,38 @@ def train(
                 # .item() 은 GPU 를 기다리게 하므로 텐서로 모아 두었다가 한 번에 꺼낸다
                 stats.append(torch.stack([pg_loss, v_loss, entropy]).detach())
 
+        # TensorBoard 에는 매 업데이트(약 8천 걸음)마다 기록해서 거의 실시간으로 볼 수 있게 한다
+        steps = step_offset + update * batch
+        pg, vl, ent = torch.stack(stats).mean(dim=0).tolist()
+        elapsed = time.time() - t0
+        sps = update * batch / elapsed
+        lr_now = opt.param_groups[0]["lr"]
+        if writer is not None:
+            new_len, new_ok = ep_len[n_logged:], ep_ok[n_logged:]
+            if new_len:
+                writer.add_scalar("episode/success_rate", 100 * np.mean(new_ok), steps)
+                writer.add_scalar("episode/mean_steps", float(np.mean(new_len)), steps)
+            writer.add_scalar("train/learning_rate", lr_now, steps)
+            writer.add_scalar("train/progress_percent", 100 * update / n_updates, steps)
+            writer.add_scalar("loss/policy", pg, steps)
+            writer.add_scalar("loss/value", vl, steps)
+            writer.add_scalar("loss/entropy", ent, steps)
+            writer.add_scalar("speed/steps_per_sec", sps, steps)
+            writer.flush()
+        n_logged = len(ep_len)
+
         if update % 10 == 0 or update == n_updates:
-            steps = step_offset + update * batch
-            pg, vl, ent = torch.stack(stats).mean(dim=0).tolist()
-            sps = update * batch / (time.time() - t0)
+            eta = (n_updates - update) * elapsed / update
+            done = update / n_updates
+            bar = "#" * int(20 * done) + "-" * (20 - int(20 * done))
             if ep_len:
-                ok = 100 * np.mean(ep_ok)
-                mean_len = float(np.mean(ep_len))
                 log(
-                    f"[{steps:>9,d} steps | {sps:6.0f}/s] "
-                    f"episodes={len(ep_len):5d} success={ok:5.1f}% mean_steps={mean_len:6.1f} "
-                    f"entropy={ent:.3f} v_loss={vl:.4f}"
+                    f"[{bar}] {100 * done:5.1f}% 남은 시간 {eta / 60:5.1f}분 | {steps:>10,d} steps {sps:6.0f}/s | "
+                    f"success={100 * np.mean(ep_ok):5.1f}% mean_steps={np.mean(ep_len):6.1f} "
+                    f"lr={lr_now:.2e} entropy={ent:.3f} v_loss={vl:.4f}"
                 )
-                if writer is not None:
-                    writer.add_scalar("episode/success_rate", ok, steps)
-                    writer.add_scalar("episode/mean_steps", mean_len, steps)
-            if writer is not None:
-                writer.add_scalar("loss/policy", pg, steps)
-                writer.add_scalar("loss/value", vl, steps)
-                writer.add_scalar("loss/entropy", ent, steps)
-                writer.add_scalar("speed/steps_per_sec", sps, steps)
-                writer.flush()
             ep_len, ep_ok = [], []
+            n_logged = 0
             save_checkpoint(
                 out_path,
                 model,
