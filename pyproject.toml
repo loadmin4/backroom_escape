@@ -1,0 +1,10 @@
+[project]
+name = "backroom-escape"
+version = "0.1.0"
+description = "무한 백룸에서 flag 를 빨리 찾도록 강화학습(PPO)으로 에이전트를 학습시킨다"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "torch>=2.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
