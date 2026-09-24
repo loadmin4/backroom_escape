@@ -120,3 +120,30 @@ def test_policy_agent_runs():
     logits, value = ActorCritic(cfg.view_size)(torch.from_numpy(obs["map"]), torch.from_numpy(obs["vec"]))
     assert logits.shape == (3, 4) and value.shape == (3,)
     assert PolicyAgent(ActorCritic(cfg.view_size)).act(obs, env).shape == (3,)
+
+
+def test_short_training_run_saves_loadable_checkpoint(tmp_path):
+    from backroom.model import load_checkpoint, resolve_device
+    from backroom.ppo import PPOConfig, train
+
+    class Recorder:
+        def __init__(self):
+            self.tags = set()
+
+        def add_scalar(self, tag, value, step):
+            self.tags.add(tag)
+
+        def flush(self):
+            pass
+
+    cfg = BackroomConfig(hint="sound")
+    writer = Recorder()
+    out = tmp_path / "ppo.pt"
+    ppo = PPOConfig(total_steps=8 * 16 * 2, n_envs=8, n_steps=16, minibatches=2, epochs=1)
+    train(cfg, ppo, str(out), device="auto", writer=writer, log=lambda *_: None)
+    assert {"loss/policy", "speed/steps_per_sec"} <= writer.tags
+
+    model, ckpt = load_checkpoint(out, device="auto")
+    assert ckpt["env_config"]["hint"] == "sound"
+    assert next(model.parameters()).device.type == resolve_device("auto").type
+    assert evaluate(lambda env: PolicyAgent(model), cfg, 4).steps.shape == (4,)

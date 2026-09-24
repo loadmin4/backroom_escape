@@ -2,6 +2,7 @@
 
     python evaluate.py --checkpoint checkpoints/ppo_sound.pt
     python evaluate.py --hint none            # 모델 없이 기준 에이전트만
+    python evaluate.py --checkpoint checkpoints/ppo_sound.pt --device cuda
 """
 
 import argparse
@@ -21,14 +22,15 @@ def main():
     p.add_argument("--episodes", type=int, default=2000)
     p.add_argument("--seed", type=int, default=12345)
     p.add_argument("--greedy", action="store_true", help="모델이 확률 대신 가장 높은 행동만 고르게 한다")
+    p.add_argument("--device", default="auto", help="모델을 돌릴 장치: auto(GPU 있으면 GPU) / cuda / cpu")
     args = p.parse_args()
 
     torch.set_num_threads(1)
     model = None
     if args.checkpoint:
-        model, ckpt = load_checkpoint(args.checkpoint)
+        model, ckpt = load_checkpoint(args.checkpoint, device=args.device)
         cfg = BackroomConfig(**ckpt["env_config"])
-        print(f"checkpoint: {args.checkpoint} ({ckpt.get('steps', '?'):,} steps)")
+        print(f"checkpoint: {args.checkpoint} ({ckpt.get('steps', '?'):,} steps, device={next(model.parameters()).device})")
     else:
         cfg = BackroomConfig(hint=args.hint or "sound")
 

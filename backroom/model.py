@@ -43,6 +43,19 @@ class ActorCritic(nn.Module):
         return self.pi(h), self.v(h).squeeze(-1)
 
 
+def resolve_device(name: str = "auto") -> torch.device:
+    """'auto' 면 NVIDIA GPU(cuda)가 있을 때 GPU, 없으면 CPU 를 쓴다."""
+    if name == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(name)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA GPU 를 찾을 수 없습니다. NVIDIA 드라이버가 설치돼 있는지, 그리고 GPU 용 PyTorch 가 "
+            "설치됐는지 확인하세요 (python check_gpu.py). CPU 로 돌리려면 --device cpu"
+        )
+    return device
+
+
 class PolicyAgent:
     """학습된 모델을 기준 에이전트와 같은 인터페이스로 감싼다."""
 
@@ -50,26 +63,28 @@ class PolicyAgent:
 
     def __init__(self, model: ActorCritic, greedy: bool = False, seed: int | None = None):
         self.model = model.eval()
+        self.device = next(model.parameters()).device
         self.greedy = greedy
         self.gen = torch.Generator().manual_seed(0 if seed is None else seed)
 
     @torch.no_grad()
     def act(self, obs, env):
-        logits, _ = self.model(torch.from_numpy(obs["map"]), torch.from_numpy(obs["vec"]))
+        grid = torch.from_numpy(obs["map"]).to(self.device)
+        vec = torch.from_numpy(obs["vec"]).to(self.device)
+        logits = self.model(grid, vec)[0].cpu()
         if self.greedy:
             return logits.argmax(dim=1).numpy()
         return torch.multinomial(torch.softmax(logits, dim=1), 1, generator=self.gen).squeeze(1).numpy()
 
 
 def save_checkpoint(path, model: ActorCritic, env_config: dict, extra: dict | None = None):
-    torch.save(
-        {"model": model.state_dict(), "view_size": model.view_size, "env_config": env_config, **(extra or {})},
-        path,
-    )
+    # GPU 에서 학습했어도 CPU 만 있는 PC 에서 열 수 있게 CPU 텐서로 저장한다
+    state = {k: v.detach().cpu() for k, v in model.state_dict().items()}
+    torch.save({"model": state, "view_size": model.view_size, "env_config": env_config, **(extra or {})}, path)
 
 
-def load_checkpoint(path):
+def load_checkpoint(path, device: str = "cpu"):
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
     model = ActorCritic(ckpt["view_size"])
     model.load_state_dict(ckpt["model"])
-    return model, ckpt
+    return model.to(resolve_device(device)), ckpt

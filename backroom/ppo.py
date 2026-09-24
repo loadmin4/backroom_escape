@@ -10,7 +10,7 @@ import torch
 from torch import nn
 
 from .env import BackroomConfig, BackroomVecEnv
-from .model import ActorCritic, save_checkpoint
+from .model import ActorCritic, resolve_device, save_checkpoint
 
 
 @dataclass
@@ -30,31 +30,45 @@ class PPOConfig:
     seed: int = 0
 
 
-def _to_torch(obs):
-    return torch.from_numpy(obs["map"]), torch.from_numpy(obs["vec"])
+def train(
+    env_cfg: BackroomConfig,
+    cfg: PPOConfig,
+    out_path: str,
+    device: str = "auto",
+    writer=None,
+    log=print,
+) -> ActorCritic:
+    """PPO 로 학습하고 out_path 에 체크포인트를 저장한다.
 
-
-def train(env_cfg: BackroomConfig, cfg: PPOConfig, out_path: str, log=print) -> ActorCritic:
+    환경은 numpy 로 CPU 에서 돌고, 신경망 계산(행동 선택, 역전파)은 device(cpu/cuda)에서 한다.
+    writer 에 TensorBoard SummaryWriter 를 넘기면 학습 곡선을 기록한다."""
+    device = resolve_device(device)
     torch.manual_seed(cfg.seed)
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True  # 입력 크기가 고정이라 가장 빠른 합성곱 알고리즘을 골라 둔다
     env = BackroomVecEnv(env_cfg, n_envs=cfg.n_envs, seed=cfg.seed)
-    model = ActorCritic(env_cfg.view_size)
+    model = ActorCritic(env_cfg.view_size).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
+
+    def to_device(obs):
+        return torch.from_numpy(obs["map"]).to(device), torch.from_numpy(obs["vec"]).to(device)
 
     T, N = cfg.n_steps, cfg.n_envs
     obs = env.reset()
-    buf_map = torch.zeros((T, N) + obs["map"].shape[1:])
-    buf_vec = torch.zeros((T, N, obs["vec"].shape[1]))
-    buf_act = torch.zeros((T, N), dtype=torch.long)
-    buf_logp = torch.zeros((T, N))
-    buf_val = torch.zeros((T, N))
-    buf_rew = torch.zeros((T, N))
-    buf_done = torch.zeros((T, N))
+    buf_map = torch.zeros((T, N) + obs["map"].shape[1:], device=device)
+    buf_vec = torch.zeros((T, N, obs["vec"].shape[1]), device=device)
+    buf_act = torch.zeros((T, N), dtype=torch.long, device=device)
+    buf_logp = torch.zeros((T, N), device=device)
+    buf_val = torch.zeros((T, N), device=device)
+    buf_rew = torch.zeros((T, N), device=device)
+    buf_done = torch.zeros((T, N), device=device)
 
     n_updates = max(1, cfg.total_steps // (T * N))
     batch = T * N
     mb_size = batch // cfg.minibatches
     ep_len, ep_ok = [], []
     t0 = time.time()
+    log(f"device: {device}" + (f" ({torch.cuda.get_device_name(device)})" if device.type == "cuda" else ""))
 
     for update in range(1, n_updates + 1):
         for g in opt.param_groups:
@@ -63,7 +77,7 @@ def train(env_cfg: BackroomConfig, cfg: PPOConfig, out_path: str, log=print) -> 
         # ---------------------------------------------------------- 경험 수집
         model.eval()
         for t in range(T):
-            grid, vec = _to_torch(obs)
+            grid, vec = to_device(obs)
             with torch.no_grad():
                 logits, value = model(grid, vec)
             dist = torch.distributions.Categorical(logits=logits)
@@ -71,18 +85,18 @@ def train(env_cfg: BackroomConfig, cfg: PPOConfig, out_path: str, log=print) -> 
             buf_map[t], buf_vec[t] = grid, vec
             buf_act[t], buf_logp[t], buf_val[t] = action, dist.log_prob(action), value
 
-            obs, reward, terminated, truncated, info = env.step(action.numpy())
+            obs, reward, terminated, truncated, info = env.step(action.cpu().numpy())
             # 시간 초과도 종료로 취급한다. 남은 시간(t/max_steps)이 관측에 있으므로 마르코프성이 유지된다.
-            buf_rew[t] = torch.from_numpy(reward)
-            buf_done[t] = torch.from_numpy((terminated | truncated).astype(np.float32))
+            buf_rew[t] = torch.from_numpy(reward).to(device)
+            buf_done[t] = torch.from_numpy((terminated | truncated).astype(np.float32)).to(device)
             ep_len.extend(info["done_len"].tolist())
             ep_ok.extend(info["done_success"].tolist())
 
         # ---------------------------------------------------------- GAE
         with torch.no_grad():
-            _, next_value = model(*_to_torch(obs))
-        adv = torch.zeros((T, N))
-        last = torch.zeros(N)
+            _, next_value = model(*to_device(obs))
+        adv = torch.zeros((T, N), device=device)
+        last = torch.zeros(N, device=device)
         for t in reversed(range(T)):
             nv = next_value if t == T - 1 else buf_val[t + 1]
             nonterm = 1.0 - buf_done[t]
@@ -99,7 +113,7 @@ def train(env_cfg: BackroomConfig, cfg: PPOConfig, out_path: str, log=print) -> 
         f_adv, f_ret = adv.reshape(-1), ret.reshape(-1)
         stats = []
         for _ in range(cfg.epochs):
-            perm = torch.randperm(batch)
+            perm = torch.randperm(batch, device=device)
             for s in range(0, batch, mb_size):
                 mb = perm[s : s + mb_size]
                 logits, value = model(f_map[mb], f_vec[mb])
@@ -116,18 +130,30 @@ def train(env_cfg: BackroomConfig, cfg: PPOConfig, out_path: str, log=print) -> 
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), cfg.max_grad_norm)
                 opt.step()
-                stats.append((pg_loss.item(), v_loss.item(), entropy.item()))
+                # .item() 은 GPU 를 기다리게 하므로 텐서로 모아 두었다가 한 번에 꺼낸다
+                stats.append(torch.stack([pg_loss, v_loss, entropy]).detach())
 
         if update % 10 == 0 or update == n_updates:
             steps = update * batch
-            pg, vl, ent = np.mean(stats, axis=0)
+            pg, vl, ent = torch.stack(stats).mean(dim=0).tolist()
+            sps = steps / (time.time() - t0)
             if ep_len:
                 ok = 100 * np.mean(ep_ok)
+                mean_len = float(np.mean(ep_len))
                 log(
-                    f"[{steps:>9,d} steps | {steps / (time.time() - t0):6.0f}/s] "
-                    f"episodes={len(ep_len):5d} success={ok:5.1f}% mean_steps={np.mean(ep_len):6.1f} "
+                    f"[{steps:>9,d} steps | {sps:6.0f}/s] "
+                    f"episodes={len(ep_len):5d} success={ok:5.1f}% mean_steps={mean_len:6.1f} "
                     f"entropy={ent:.3f} v_loss={vl:.4f}"
                 )
+                if writer is not None:
+                    writer.add_scalar("episode/success_rate", ok, steps)
+                    writer.add_scalar("episode/mean_steps", mean_len, steps)
+            if writer is not None:
+                writer.add_scalar("loss/policy", pg, steps)
+                writer.add_scalar("loss/value", vl, steps)
+                writer.add_scalar("loss/entropy", ent, steps)
+                writer.add_scalar("speed/steps_per_sec", sps, steps)
+                writer.flush()
             ep_len, ep_ok = [], []
             save_checkpoint(out_path, model, env_cfg.to_dict(), {"ppo_config": asdict(cfg), "steps": steps})
 

@@ -94,12 +94,71 @@ agent=bayes hint=sound                    S = 시작 방, F = flag, @ = 에이�
 무한한 격자는 원환(torus) 배열에 접어서 기억하는데, 배열 한 변을 `max_steps + view_radius + 1` 로 잡아서
 관측 창 안에서 서로 다른 방이 겹치는 일이 없게 했다 (`tests/test_env.py` 에서 진짜 무한 격자와 비교해 검증).
 
-## 사용법
+## VS Code + GPU 로 학습·평가하기 (윈도우)
+
+### 준비물
+
+- **NVIDIA GPU 와 최신 드라이버** ([nvidia.com/drivers](https://www.nvidia.com/drivers)).
+  CUDA Toolkit 은 따로 설치할 필요가 없다 (PyTorch 안에 들어 있다). GPU 가 없으면 자동으로 CPU 로 학습한다.
+- **Python 3.10 ~ 3.12** ([python.org](https://www.python.org/downloads/windows/)). 설치 첫 화면에서 **"Add python.exe to PATH"** 체크.
+- **VS Code**. 폴더를 열면 Python 확장 설치를 권하는 알림이 뜨니 설치한다.
+
+### 1. 폴더 열기
+
+VS Code → 파일 → 폴더 열기 → `train.py` 가 들어 있는 `backroom_escape` 폴더.
+"이 폴더에 있는 파일의 작성자를 신뢰합니까?" 가 나오면 **신뢰**를 누른다 (그래야 작업/실행 설정이 동작한다).
+
+### 2. 환경 설치 (처음 한 번)
+
+**터미널 → 작업 실행... → `1. 환경 설치 (GPU 자동 감지)`**
+
+`scripts/setup_windows.ps1` 이 다음을 한다.
+
+1. `.venv` 가상환경을 만든다.
+2. `nvidia-smi` 로 드라이버 버전을 보고 PyTorch 를 고른다: 드라이버 580 이상이면 CUDA 13.0, 아니면 CUDA 12.6 빌드
+   (RTX 50 시리즈는 드라이버 580 이상 필요). GPU 버전은 2~3GB 라 몇 분 걸린다.
+3. numpy, tensorboard, pytest 를 설치하고, 마지막에 GPU 인식 여부와 CPU/GPU 학습 속도를 측정해 보여 준다.
+
+끝나면 **Ctrl+Shift+P → `Python: Select Interpreter` → `.venv`** 를 고른다 (오른쪽 아래 상태 표시줄에 `.venv` 가 보이면 된다).
+
+### 3. 학습
+
+**실행 및 디버그(Ctrl+Shift+D)** → 위쪽 목록에서 구성을 고르고 **Ctrl+F5**(디버깅 없이 실행).
+F5 로 실행하면 중단점을 걸어 코드를 한 줄씩 볼 수 있지만 조금 느리다.
+
+| 구성 | 하는 일 |
+|---|---|
+| 학습: 빠른 동작 확인 (20만 걸음) | 설치가 잘 됐는지 몇 분 만에 확인. `checkpoints/ppo_quick.pt` |
+| 학습: sound (소리 힌트, 400만 걸음) | flag 소리를 듣고 찾도록 학습. `checkpoints/ppo_sound.pt` |
+| 학습: none (힌트 없음, 400만 걸음) | 방이 전부 똑같을 때. `checkpoints/ppo_none.pt` |
+| 학습: sound + none 동시에 | 위 두 개를 한꺼번에 |
+| 평가: 모델 고르기 | 고른 모델을 랜덤 / 나선 / 베이즈 탐색과 같은 2000 회차에서 비교 |
+| 시각화: 모델 고르기 | 고른 모델의 한 회차를 터미널에 애니메이션으로 |
+
+학습 로그 첫 줄에 `device: cuda (GPU 이름)` 이 보이면 GPU 로 학습 중이다. `device: cpu` 라면 아래 문제 해결을 본다.
+
+### 4. 학습 곡선 보기
+
+**터미널 → 작업 실행... → `3. TensorBoard 열기`** 후 터미널에 나온 http://localhost:6006 을 Ctrl+클릭.
+`episode/mean_steps`(flag 를 찾기까지 평균 걸음 수)가 내려가고 `episode/success_rate` 가 100% 로 올라가면 잘 배우고 있는 것이다.
+학습할 때마다 `runs/` 아래에 새 기록이 생겨서 여러 번의 학습을 겹쳐 비교할 수 있다.
+
+### 문제 해결
+
+| 증상 | 해결 |
+|---|---|
+| 로그에 `device: cpu` | 작업 `2. 설치·GPU 확인 + 학습 속도 측정` 을 실행하고 안내를 따른다 (드라이버 없음 / CPU 전용 PyTorch 설치됨 등) |
+| `no kernel image is available` 오류 | GPU 가 너무 새것이라 CUDA 12.6 빌드가 지원하지 않는 경우. 드라이버를 580 이상으로 올리고 설치 작업을 다시 실행 |
+| 터미널을 열 때 `Activate.ps1 ... 스크립트를 실행할 수 없으므로` | PowerShell 에서 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 한 번 실행 (학습·평가 실행에는 영향 없음) |
+| `ModuleNotFoundError: No module named 'torch'` | 인터프리터가 `.venv` 가 아니다. Ctrl+Shift+P → `Python: Select Interpreter` → `.venv` |
+| GPU 사용률이 낮다 | 정상이다. 신경망이 작고 백룸 환경은 CPU(numpy)에서 돌기 때문. GPU 는 역전파를 빠르게 해 준다. 더 많이 쓰려면 `--n-envs 256` (한 번에 모으는 경험이 늘어 학습 양상이 달라질 수 있음) |
+
+## 명령어로 실행하기 (모든 OS)
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt   # GPU 를 쓰려면 먼저 CUDA 버전 PyTorch 를 설치 (pytorch.org 참고)
 
-# 학습 (CPU 4코어 기준 모드당 약 30분). 결과는 checkpoints/ppo_<hint>.pt
+# 학습. GPU 가 있으면 자동으로 쓴다 (--device cpu 로 끌 수 있음). 결과는 checkpoints/ppo_<hint>.pt
 python train.py --hint sound --steps 4000000
 python train.py --hint none  --steps 4000000
 
@@ -111,7 +170,9 @@ python evaluate.py --checkpoint checkpoints/ppo_none.pt
 python play.py --checkpoint checkpoints/ppo_sound.pt --animate
 python play.py --agent spiral --hint none
 
-# 테스트
+# 설치·GPU 확인, 학습 곡선, 테스트
+python check_gpu.py
+tensorboard --logdir runs
 pytest
 ```
 
@@ -124,44 +185,24 @@ pytest
 
 | 값 | 의미 |
 |---|---|
+| `steps/s` | 초당 학습 걸음 수 (CPU 4코어에서 약 2,300~3,500) |
 | `success` | 직전 8만 걸음 동안 끝난 회차 중 flag 를 찾은 비율 |
 | `mean_steps` | 그 회차들의 평균 걸음 수. **이 값이 내려가는 것이 학습의 목표** |
 | `entropy` | 행동의 무작위성. 내려갈수록 정책이 확신을 갖는다 |
 
-### 윈도우에서 실행하기
-
-1. [python.org](https://www.python.org/downloads/windows/) 에서 Python 3.11 또는 3.12 를 설치한다.
-   설치 첫 화면에서 **"Add python.exe to PATH"** 를 체크한다.
-2. 압축을 푼 폴더에서 PowerShell 을 연다 (폴더 빈 곳에서 Shift + 우클릭 → "PowerShell 창 열기" 또는 "터미널에서 열기").
-3. 가상환경을 만들고 패키지를 설치한다.
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1          # cmd 라면: .venv\Scripts\activate.bat
-pip install -r requirements.txt
-```
-
-   `Activate.ps1` 에서 "스크립트를 실행할 수 없으므로" 오류가 나면 한 번만 아래를 실행하고 다시 시도한다.
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-4. 이후 명령은 위와 같다 (`python train.py --hint sound --steps 4000000` 등).
-
-- GPU 없이 CPU 만 쓴다. 학습 중에는 PC 가 절전 모드로 들어가지 않게 한다.
-- 창을 닫거나 Ctrl+C 로 멈춰도 마지막으로 저장된 체크포인트는 남는다.
-- `play.py --animate` 는 Windows Terminal(윈도우 11 기본 터미널)에서 가장 깔끔하게 보인다.
-
-주요 옵션:
+`train.py` 주요 옵션:
 
 | 옵션 | 기본값 | 의미 |
 |---|---|---|
 | `--hint` | `sound` | `none`: 방이 전부 똑같음, `sound`: flag 소리가 들림 |
+| `--steps` | 4,000,000 | 총 학습 걸음 수 |
+| `--device` | `auto` | `auto`(GPU 있으면 GPU) / `cuda` / `cpu` |
 | `--flag-range` | 6 | flag 는 시작점에서 가로/세로 이 칸 수 이내 |
 | `--max-steps` | 250 | 한 회차 최대 걸음 수 |
 | `--sound-noise` | 0.1 | 소리 잡음의 표준편차 (클수록 어려움) |
-| `--steps` | 3,000,000 | 총 학습 걸음 수 |
+| `--n-envs` | 64 | 동시에 돌리는 회차 수 |
+| `--out` | `checkpoints/ppo_<hint>.pt` | 체크포인트 경로 |
+| `--logdir` | `runs` | TensorBoard 기록 폴더 (`""` 이면 기록 안 함) |
 
 ## 파일 구조
 
@@ -172,10 +213,14 @@ backroom/
   model.py       정책·가치 신경망, 체크포인트 저장/불러오기
   ppo.py         PPO 학습 루프
   evaluation.py  같은 배치의 회차들에서 에이전트 비교
-train.py         학습 실행
+train.py         학습 실행 (--device 로 GPU/CPU 선택, TensorBoard 기록)
 evaluate.py      평가 실행
 play.py          한 회차 시각화
-tests/           환경·기준선 테스트
+check_gpu.py     설치·GPU 확인, CPU/GPU 학습 속도 측정
+scripts/
+  setup_windows.ps1  윈도우 환경 설치 (가상환경 + 드라이버에 맞는 CUDA PyTorch)
+.vscode/         VS Code 실행 구성(launch.json), 작업(tasks.json), 설정
+tests/           환경·기준선·학습 루프 테스트
 ```
 
 ## 더 해볼 만한 것

@@ -1,0 +1,50 @@
+{
+    // 터미널 > 작업 실행... (Ctrl+Shift+P -> "Tasks: Run Task") 에서 고른다.
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "1. 환경 설치 (GPU 자동 감지)",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\setup_windows.ps1"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "1-b. 환경 설치 (CPU 전용)",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}\\scripts\\setup_windows.ps1", "-Cpu"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "presentation": { "reveal": "always", "panel": "dedicated" },
+            "problemMatcher": []
+        },
+        {
+            "label": "2. 설치·GPU 확인 + 학습 속도 측정",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["check_gpu.py"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            "label": "3. TensorBoard 열기 (학습 곡선, http://localhost:6006)",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "tensorboard.main", "--logdir", "runs", "--port", "6006"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "isBackground": true,
+            "problemMatcher": []
+        },
+        {
+            "label": "테스트 실행",
+            "type": "process",
+            "command": "${command:python.interpreterPath}",
+            "args": ["-m", "pytest", "-q"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "test",
+            "problemMatcher": []
+        }
+    ]
+}
