@@ -147,3 +147,16 @@ def test_short_training_run_saves_loadable_checkpoint(tmp_path):
     assert ckpt["env_config"]["hint"] == "sound"
     assert next(model.parameters()).device.type == resolve_device("auto").type
     assert evaluate(lambda env: PolicyAgent(model), cfg, 4).steps.shape == (4,)
+
+
+def test_resume_continues_step_count(tmp_path):
+    from backroom.ppo import PPOConfig, train
+
+    cfg = BackroomConfig()
+    ppo = PPOConfig(total_steps=8 * 16, n_envs=8, n_steps=16, minibatches=2, epochs=1)
+    out = tmp_path / "ppo.pt"
+    train(cfg, ppo, str(out), device="cpu", log=lambda *_: None)
+    first = torch.load(out, weights_only=False)
+    assert first["steps"] == 128 and "optimizer" in first
+    train(cfg, ppo, str(out), device="cpu", log=lambda *_: None, resume=first)
+    assert torch.load(out, weights_only=False)["steps"] == 256

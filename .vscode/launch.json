@@ -38,6 +38,17 @@
             "justMyCode": true
         },
         {
+            "name": "학습: 이어서 400만 걸음 더 (모델 고르기)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+            "program": "${workspaceFolder}/train.py",
+            "args": ["--resume", "${input:checkpoint}", "--steps", "4000000", "--device", "auto"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
             "name": "평가: 모델 고르기",
             "type": "debugpy",
             "request": "launch",

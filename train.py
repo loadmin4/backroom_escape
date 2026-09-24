@@ -3,6 +3,7 @@
     python train.py --hint sound --steps 4000000
     python train.py --hint none  --steps 4000000
     python train.py --hint sound --device cpu      # GPU 가 있어도 CPU 로
+    python train.py --resume checkpoints/ppo_sound.pt --steps 4000000   # 저장된 모델에서 400만 걸음 더
 
 학습 곡선은 runs/ 에 TensorBoard 형식으로 기록된다:  tensorboard --logdir runs
 """
@@ -46,23 +47,34 @@ def main():
     p.add_argument("--threads", type=int, default=os.cpu_count(), help="CPU 계산에 쓸 스레드 수")
     p.add_argument("--out", default=None, help="체크포인트 경로 (기본: checkpoints/ppo_<hint>.pt)")
     p.add_argument("--logdir", default="runs", help="TensorBoard 로그 폴더 ('' 이면 기록 안 함)")
+    p.add_argument(
+        "--resume",
+        default=None,
+        help="이 체크포인트에서 이어서 --steps 만큼 더 학습 (환경 설정은 체크포인트 것을 쓰고, 기본 저장 위치도 같은 파일)",
+    )
     args = p.parse_args()
 
     torch.set_num_threads(args.threads)
-    env_cfg = BackroomConfig(
-        flag_range=args.flag_range,
-        max_steps=args.max_steps,
-        hint=args.hint,
-        sound_noise=args.sound_noise,
-        view_radius=2 * args.flag_range,
-    )
-    out = args.out or f"checkpoints/ppo_{args.hint}.pt"
+    resume = None
+    if args.resume:
+        resume = torch.load(args.resume, map_location="cpu", weights_only=False)
+        env_cfg = BackroomConfig(**resume["env_config"])
+        print(f"이어서 학습: {args.resume} ({resume.get('steps', 0):,} 걸음 학습된 모델)")
+    else:
+        env_cfg = BackroomConfig(
+            flag_range=args.flag_range,
+            max_steps=args.max_steps,
+            hint=args.hint,
+            sound_noise=args.sound_noise,
+            view_radius=2 * args.flag_range,
+        )
+    out = args.out or args.resume or f"checkpoints/ppo_{env_cfg.hint}.pt"
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     print(f"env: {env_cfg}")
-    writer = make_writer(args.logdir, f"ppo_{args.hint}") if args.logdir else None
+    writer = make_writer(args.logdir, f"ppo_{env_cfg.hint}") if args.logdir else None
     ppo_cfg = PPOConfig(total_steps=args.steps, n_envs=args.n_envs, seed=args.seed)
     try:
-        train(env_cfg, ppo_cfg, out, device=args.device, writer=writer)
+        train(env_cfg, ppo_cfg, out, device=args.device, writer=writer, resume=resume)
         print(f"saved -> {out}")
     except KeyboardInterrupt:
         print(f"\n학습을 중단했습니다. 체크포인트는 약 8만 걸음마다 {out} 에 저장됩니다 (그 전에 멈췄다면 없음).")

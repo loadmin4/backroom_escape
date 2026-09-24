@@ -37,11 +37,13 @@ def train(
     device: str = "auto",
     writer=None,
     log=print,
+    resume: dict | None = None,
 ) -> ActorCritic:
     """PPO 로 학습하고 out_path 에 체크포인트를 저장한다.
 
     환경은 numpy 로 CPU 에서 돌고, 신경망 계산(행동 선택, 역전파)은 device(cpu/cuda)에서 한다.
-    writer 에 TensorBoard SummaryWriter 를 넘기면 학습 곡선을 기록한다."""
+    writer 에 TensorBoard SummaryWriter 를 넘기면 학습 곡선을 기록한다.
+    resume 에 이전 체크포인트(dict)를 넘기면 그 가중치(와 옵티마이저 상태)에서 이어서 학습한다."""
     device = resolve_device(device)
     torch.manual_seed(cfg.seed)
     if device.type == "cuda":
@@ -49,6 +51,12 @@ def train(
     env = BackroomVecEnv(env_cfg, n_envs=cfg.n_envs, seed=cfg.seed)
     model = ActorCritic(env_cfg.view_size).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg.lr, eps=1e-5)
+    step_offset = 0
+    if resume is not None:
+        model.load_state_dict(resume["model"])
+        if "optimizer" in resume:
+            opt.load_state_dict(resume["optimizer"])
+        step_offset = int(resume.get("steps", 0))
 
     def to_device(obs):
         return torch.from_numpy(obs["map"]).to(device), torch.from_numpy(obs["vec"]).to(device)
@@ -134,9 +142,9 @@ def train(
                 stats.append(torch.stack([pg_loss, v_loss, entropy]).detach())
 
         if update % 10 == 0 or update == n_updates:
-            steps = update * batch
+            steps = step_offset + update * batch
             pg, vl, ent = torch.stack(stats).mean(dim=0).tolist()
-            sps = steps / (time.time() - t0)
+            sps = update * batch / (time.time() - t0)
             if ep_len:
                 ok = 100 * np.mean(ep_ok)
                 mean_len = float(np.mean(ep_len))
@@ -155,6 +163,11 @@ def train(
                 writer.add_scalar("speed/steps_per_sec", sps, steps)
                 writer.flush()
             ep_len, ep_ok = [], []
-            save_checkpoint(out_path, model, env_cfg.to_dict(), {"ppo_config": asdict(cfg), "steps": steps})
+            save_checkpoint(
+                out_path,
+                model,
+                env_cfg.to_dict(),
+                {"ppo_config": asdict(cfg), "steps": steps, "optimizer": opt.state_dict()},
+            )
 
     return model
