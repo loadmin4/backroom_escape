@@ -120,6 +120,31 @@ pytest
 | `mean_steps` | 그 회차들의 평균 걸음 수. **이 값이 내려가는 것이 학습의 목표** |
 | `entropy` | 행동의 무작위성. 내려갈수록 정책이 확신을 갖는다 |
 
+### 윈도우에서 실행하기
+
+1. [python.org](https://www.python.org/downloads/windows/) 에서 Python 3.11 또는 3.12 를 설치한다.
+   설치 첫 화면에서 **"Add python.exe to PATH"** 를 체크한다.
+2. 압축을 푼 폴더에서 PowerShell 을 연다 (폴더 빈 곳에서 Shift + 우클릭 → "PowerShell 창 열기" 또는 "터미널에서 열기").
+3. 가상환경을 만들고 패키지를 설치한다.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1          # cmd 라면: .venv\Scripts\activate.bat
+pip install -r requirements.txt
+```
+
+   `Activate.ps1` 에서 "스크립트를 실행할 수 없으므로" 오류가 나면 한 번만 아래를 실행하고 다시 시도한다.
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+4. 이후 명령은 위와 같다 (`python train.py --hint sound --steps 4000000` 등).
+
+- GPU 없이 CPU 만 쓴다. 학습 중에는 PC 가 절전 모드로 들어가지 않게 한다.
+- 창을 닫거나 Ctrl+C 로 멈춰도 마지막으로 저장된 체크포인트는 남는다.
+- `play.py --animate` 는 Windows Terminal(윈도우 11 기본 터미널)에서 가장 깔끔하게 보인다.
+
 주요 옵션:
 
 | 옵션 | 기본값 | 의미 |

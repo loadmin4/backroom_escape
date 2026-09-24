@@ -8,6 +8,7 @@ S = 시작 방, F = flag, @ = 에이전트, 숫자/점 = 지나온 방 (sound �
 """
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -60,6 +61,8 @@ def main():
     args = p.parse_args()
 
     torch.set_num_threads(1)
+    if os.name == "nt":
+        os.system("")  # 윈도우 콘솔(cmd)에서 화면 지우기용 ANSI 코드가 동작하도록 켠다
     agent_name = args.agent or ("ppo" if args.checkpoint else "spiral")
     if args.checkpoint:
         model, ckpt = load_checkpoint(args.checkpoint)
