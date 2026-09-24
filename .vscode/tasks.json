@@ -23,7 +23,7 @@
         {
             "label": "2. 설치·GPU 확인 + 학습 속도 측정",
             "type": "process",
-            "command": "${command:python.interpreterPath}",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "args": ["check_gpu.py"],
             "options": { "cwd": "${workspaceFolder}" },
             "problemMatcher": []
@@ -31,7 +31,7 @@
         {
             "label": "3. TensorBoard 열기 (학습 곡선, http://localhost:6006)",
             "type": "process",
-            "command": "${command:python.interpreterPath}",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "args": ["-m", "tensorboard.main", "--logdir", "runs", "--port", "6006"],
             "options": { "cwd": "${workspaceFolder}" },
             "isBackground": true,
@@ -40,7 +40,7 @@
         {
             "label": "테스트 실행",
             "type": "process",
-            "command": "${command:python.interpreterPath}",
+            "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "args": ["-m", "pytest", "-q"],
             "options": { "cwd": "${workspaceFolder}" },
             "group": "test",

@@ -60,9 +60,10 @@ def main():
     try:
         import numpy
         import torch
-    except ImportError as e:
-        print(f"  ! {e.name} 가 설치돼 있지 않습니다. 설치 스크립트(scripts\\setup_windows.ps1)를 먼저 실행하세요.")
-        return 1
+    except ModuleNotFoundError as e:
+        from backroom import exit_missing_package
+
+        exit_missing_package(e)
     print(f"numpy      : {numpy.__version__}")
     print(f"PyTorch    : {torch.__version__} (CUDA 빌드: {torch.version.cuda or '없음, CPU 전용'})")
     try:

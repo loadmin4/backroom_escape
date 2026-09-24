@@ -7,7 +7,12 @@
 
 import argparse
 
-import torch
+try:
+    import torch
+except ModuleNotFoundError as e:  # .venv 가 아닌 파이썬으로 실행했거나 설치가 안 된 경우
+    from backroom import exit_missing_package
+
+    exit_missing_package(e)
 
 from backroom.baselines import BayesSearchAgent, RandomWalkAgent, SpiralAgent
 from backroom.env import HINTS, BackroomConfig

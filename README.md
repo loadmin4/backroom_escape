@@ -150,7 +150,7 @@ F5 로 실행하면 중단점을 걸어 코드를 한 줄씩 볼 수 있지만 �
 | 로그에 `device: cpu` | 작업 `2. 설치·GPU 확인 + 학습 속도 측정` 을 실행하고 안내를 따른다 (드라이버 없음 / CPU 전용 PyTorch 설치됨 등) |
 | `no kernel image is available` 오류 | GPU 가 너무 새것이라 CUDA 12.6 빌드가 지원하지 않는 경우. 드라이버를 580 이상으로 올리고 설치 작업을 다시 실행 |
 | 터미널을 열 때 `Activate.ps1 ... 스크립트를 실행할 수 없으므로` | PowerShell 에서 `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` 한 번 실행 (학습·평가 실행에는 영향 없음) |
-| `ModuleNotFoundError: No module named 'torch'` | 인터프리터가 `.venv` 가 아니다. Ctrl+Shift+P → `Python: Select Interpreter` → `.venv` |
+| `'torch' 패키지를 찾을 수 없습니다` | 메시지가 원인을 알려 준다. ① 환경 설치 작업을 아직 안 했거나 중간에 실패함 → 설치 작업 다시 실행 ② 다른 파이썬으로 실행함(에디터 오른쪽 위 ▷ 버튼 등) → 실행 및 디버그의 구성으로 실행하거나 인터프리터를 `.venv` 로 ③ 압축을 풀어 생긴 바깥 폴더를 엶 → `train.py` 가 있는 폴더를 연다 |
 | GPU 사용률이 낮다 | 정상이다. 신경망이 작고 백룸 환경은 CPU(numpy)에서 돌기 때문. GPU 는 역전파를 빠르게 해 준다. 더 많이 쓰려면 `--n-envs 256` (한 번에 모으는 경험이 늘어 학습 양상이 달라질 수 있음) |
 
 ## 명령어로 실행하기 (모든 OS)

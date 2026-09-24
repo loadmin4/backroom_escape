@@ -1,12 +1,14 @@
 {
     // 실행 및 디버그(Ctrl+Shift+D)에서 골라 Ctrl+F5(디버깅 없이 실행)로 돌린다.
     // F5 로 돌리면 중단점을 걸 수 있지만 조금 느리다.
+    // VS Code 에서 어떤 인터프리터를 골랐든 항상 설치 스크립트가 만든 .venv 의 파이썬을 쓴다.
     "version": "0.2.0",
     "configurations": [
         {
             "name": "학습: sound (소리 힌트, 400만 걸음)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/train.py",
             "args": ["--hint", "sound", "--steps", "4000000", "--device", "auto"],
             "cwd": "${workspaceFolder}",
@@ -17,6 +19,7 @@
             "name": "학습: none (힌트 없음, 400만 걸음)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/train.py",
             "args": ["--hint", "none", "--steps", "4000000", "--device", "auto"],
             "cwd": "${workspaceFolder}",
@@ -27,6 +30,7 @@
             "name": "학습: 빠른 동작 확인 (20만 걸음)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/train.py",
             "args": ["--hint", "sound", "--steps", "200000", "--device", "auto", "--out", "checkpoints/ppo_quick.pt"],
             "cwd": "${workspaceFolder}",
@@ -37,6 +41,7 @@
             "name": "평가: 모델 고르기",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/evaluate.py",
             "args": ["--checkpoint", "${input:checkpoint}", "--device", "auto"],
             "cwd": "${workspaceFolder}",
@@ -47,6 +52,7 @@
             "name": "시각화: 모델 고르기 (한 회차 애니메이션)",
             "type": "debugpy",
             "request": "launch",
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/play.py",
             "args": ["--checkpoint", "${input:checkpoint}", "--animate"],
             "cwd": "${workspaceFolder}",
