@@ -110,4 +110,4 @@ Step "설치 확인"
 Check "설치 확인 중 오류가 났습니다."
 
 Write-Host "`n설치 완료! VS Code 에서 Ctrl+Shift+P -> 'Python: Select Interpreter' -> .venv 를 고른 뒤" -ForegroundColor Green
-Write-Host "실행 및 디버그(Ctrl+Shift+D)에서 '학습: sound' 를 골라 Ctrl+F5 로 실행하세요." -ForegroundColor Green
+Write-Host "실행 및 디버그(Ctrl+Shift+D)에서 '학습 (400만 걸음)' 을 골라 Ctrl+F5 로 실행하세요." -ForegroundColor Green

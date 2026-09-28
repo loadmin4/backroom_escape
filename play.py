@@ -1,10 +1,10 @@
 """한 회차를 터미널에 그려서 보여준다.
 
-    python play.py --checkpoint checkpoints/ppo_sound.pt
-    python play.py --agent spiral --hint none
-    python play.py --checkpoint checkpoints/ppo_sound.pt --animate
+    python play.py --checkpoint checkpoints/ppo.pt
+    python play.py --agent spiral
+    python play.py --checkpoint checkpoints/ppo.pt --animate
 
-S = 시작 방, F = flag, @ = 에이전트, 숫자/점 = 지나온 방 (sound 모드에서는 들은 소리 크기 0~9)
+S = 시작 방, F = flag, @ = 에이전트, o = 지나온 방, . = flag 가 있을 수 있는 방
 """
 
 import argparse
@@ -12,28 +12,25 @@ import os
 import time
 
 try:
-    import numpy as np
     import torch
 except ModuleNotFoundError as e:  # .venv 가 아닌 파이썬으로 실행했거나 설치가 안 된 경우
     from backroom import exit_missing_package
 
     exit_missing_package(e)
 
-from backroom.baselines import BayesSearchAgent, RandomWalkAgent, SpiralAgent
-from backroom.env import HINTS, MOVES, BackroomConfig, BackroomVecEnv
+from backroom.baselines import RandomWalkAgent, SpiralAgent
+from backroom.env import MOVES, BackroomConfig, BackroomVecEnv
 from backroom.model import PolicyAgent, load_checkpoint
 
 
 def render(cfg: BackroomConfig, pos, flag, path) -> str:
-    """path = [((x, y), 들은 소리), ...]"""
+    """path = 지나온 방들의 (x, y)"""
     radius = cfg.flag_range
-    heard = {}
-    for xy, s in path:
-        heard.setdefault(xy, []).append(s)
-    lo_x = min(-radius, min(x for (x, _), _ in path))
-    hi_x = max(radius, max(x for (x, _), _ in path))
-    lo_y = min(-radius, min(y for (_, y), _ in path))
-    hi_y = max(radius, max(y for (_, y), _ in path))
+    seen = set(path)
+    lo_x = min(-radius, min(x for x, _ in path))
+    hi_x = max(radius, max(x for x, _ in path))
+    lo_y = min(-radius, min(y for _, y in path))
+    hi_y = max(radius, max(y for _, y in path))
     lines = []
     for y in range(hi_y, lo_y - 1, -1):
         row = []
@@ -44,8 +41,8 @@ def render(cfg: BackroomConfig, pos, flag, path) -> str:
                 c = "F"
             elif (x, y) == (0, 0):
                 c = "S"
-            elif (x, y) in heard:
-                c = str(min(9, int(10 * np.mean(heard[(x, y)])))) if cfg.hint == "sound" else "o"
+            elif (x, y) in seen:
+                c = "o"
             elif max(abs(x), abs(y)) <= cfg.flag_range:
                 c = "."
             else:
@@ -58,8 +55,7 @@ def render(cfg: BackroomConfig, pos, flag, path) -> str:
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--checkpoint", default=None)
-    p.add_argument("--agent", choices=["ppo", "spiral", "bayes", "random"], default=None)
-    p.add_argument("--hint", choices=HINTS, default="sound")
+    p.add_argument("--agent", choices=["ppo", "spiral", "random"], default=None)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--animate", action="store_true")
     p.add_argument("--delay", type=float, default=0.15)
@@ -75,23 +71,22 @@ def main():
     else:
         if agent_name == "ppo":
             p.error("--agent ppo 에는 --checkpoint 가 필요합니다")
-        cfg = BackroomConfig(hint=args.hint)
+        cfg = BackroomConfig()
 
     env = BackroomVecEnv(cfg, n_envs=1, seed=args.seed)
     obs = env.reset()
     agent = {
         "ppo": lambda: PolicyAgent(model, seed=args.seed),
         "spiral": lambda: SpiralAgent(cfg.max_steps),
-        "bayes": lambda: BayesSearchAgent(env),
         "random": lambda: RandomWalkAgent(args.seed),
     }[agent_name]()
 
-    print(f"agent={agent_name} hint={cfg.hint}")
+    print(f"agent={agent_name}")
     flag = tuple(int(v) for v in env.flag[0])  # 회차가 끝나면 env 가 자동 리셋되므로 미리 적어 둔다
     world = tuple(int(v) for v in env.world_start[0])
     print(f"월드 좌표상 시작점 {world} (에이전트는 모름), 시작점 기준 flag 위치 {flag}")
     pos = (0, 0)
-    path = [(pos, float(env.last_sound[0]))]
+    path = [pos]
     for step in range(1, cfg.max_steps + 1):
         action = int(agent.act(obs, env)[0])
         pos = (pos[0] + int(MOVES[action][0]), pos[1] + int(MOVES[action][1]))
@@ -100,7 +95,7 @@ def main():
             print(render(cfg, pos, flag, path))
             print(f"\n{'탈출 성공!' if terminated[0] else '실패 (시간 초과)'}  걸음 수 = {step}")
             return
-        path.append((pos, float(env.last_sound[0])))
+        path.append(pos)
         if args.animate:
             print("\033[H\033[J" + render(cfg, pos, flag, path) + f"\n\nstep {step}")
             time.sleep(args.delay)

@@ -83,8 +83,18 @@ def save_checkpoint(path, model: ActorCritic, env_config: dict, extra: dict | No
     torch.save({"model": state, "view_size": model.view_size, "env_config": env_config, **(extra or {})}, path)
 
 
-def load_checkpoint(path, device: str = "cpu"):
+def read_checkpoint(path) -> dict:
     ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if "hint" in ckpt["env_config"]:
+        raise SystemExit(
+            f"[오류] {path} 는 소리 힌트가 있던 이전 버전에서 학습한 모델이라 지금 버전에서 쓸 수 없습니다.\n"
+            "       다시 학습하세요: python train.py  (VS Code: '학습 (400만 걸음)')"
+        )
+    return ckpt
+
+
+def load_checkpoint(path, device: str = "cpu"):
+    ckpt = read_checkpoint(path)
     model = ActorCritic(ckpt["view_size"])
     model.load_state_dict(ckpt["model"])
     return model.to(resolve_device(device)), ckpt

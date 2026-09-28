@@ -5,23 +5,12 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "학습: sound (소리 힌트, 400만 걸음)",
+            "name": "학습 (400만 걸음)",
             "type": "debugpy",
             "request": "launch",
             "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/train.py",
-            "args": ["--hint", "sound", "--steps", "4000000", "--device", "auto"],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "학습: none (힌트 없음, 400만 걸음)",
-            "type": "debugpy",
-            "request": "launch",
-            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-            "program": "${workspaceFolder}/train.py",
-            "args": ["--hint", "none", "--steps", "4000000", "--device", "auto"],
+            "args": ["--steps", "4000000", "--device", "auto"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": true
@@ -32,7 +21,7 @@
             "request": "launch",
             "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
             "program": "${workspaceFolder}/train.py",
-            "args": ["--hint", "sound", "--steps", "200000", "--device", "auto", "--out", "checkpoints/ppo_quick.pt"],
+            "args": ["--steps", "200000", "--device", "auto", "--out", "checkpoints/ppo_quick.pt"],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "justMyCode": true
@@ -71,19 +60,13 @@
             "justMyCode": true
         }
     ],
-    "compounds": [
-        {
-            "name": "학습: sound + none 동시에",
-            "configurations": ["학습: sound (소리 힌트, 400만 걸음)", "학습: none (힌트 없음, 400만 걸음)"]
-        }
-    ],
     "inputs": [
         {
             "id": "checkpoint",
             "type": "pickString",
             "description": "어떤 모델을 쓸까요?",
-            "options": ["checkpoints/ppo_sound.pt", "checkpoints/ppo_none.pt", "checkpoints/ppo_quick.pt"],
-            "default": "checkpoints/ppo_sound.pt"
+            "options": ["checkpoints/ppo.pt", "checkpoints/ppo_quick.pt"],
+            "default": "checkpoints/ppo.pt"
         }
     ]
 }

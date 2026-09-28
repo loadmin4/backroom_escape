@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 import torch
 
-from backroom.baselines import BayesSearchAgent, SpiralAgent, spiral_actions
-from backroom.env import MOVES, RIGHT, UP, VEC_DIM, BackroomConfig, BackroomVecEnv
+from backroom.baselines import SpiralAgent, spiral_actions
+from backroom.env import DOWN, LEFT, MAP_CHANNELS, MOVES, RIGHT, UP, VEC_DIM, BackroomConfig, BackroomVecEnv
 from backroom.evaluation import evaluate
 from backroom.model import ActorCritic, PolicyAgent
 
@@ -18,13 +18,26 @@ def test_flag_is_in_range_and_never_at_start():
     assert len({tuple(f) for f in env.flag}) == cfg.n_candidates
 
 
-def test_rooms_look_identical_without_hint():
-    """시작점과 flag 가 달라도, 힌트가 없으면 처음 보는 관측은 모든 회차에서 똑같다."""
-    env = BackroomVecEnv(BackroomConfig(hint="none"), n_envs=50, seed=1)
+def test_rooms_look_identical():
+    """시작점과 flag 가 달라도 처음 보는 관측은 모든 회차에서 똑같다."""
+    env = BackroomVecEnv(BackroomConfig(), n_envs=50, seed=1)
     obs = env.reset()
     assert len({tuple(w) for w in env.world_start}) == 50
     assert np.all(obs["map"] == obs["map"][0])
     assert np.all(obs["vec"] == obs["vec"][0])
+
+
+def test_no_clue_near_flag():
+    """flag 바로 옆 방들을 지나가도 flag 가 아주 먼 회차와 관측이 똑같다 (가깝다는 단서가 없다)."""
+    env = BackroomVecEnv(BackroomConfig(), n_envs=2, seed=0)
+    env.reset()
+    env.flag[0] = (1, 1)  # 아래 경로는 이 방을 빙 둘러 가며 들어가지는 않는다
+    env.flag[1] = (10**6, 10**6)
+    for a in [RIGHT, RIGHT, UP, UP, LEFT, LEFT, DOWN]:
+        obs, _, terminated, *_ = env.step([a, a])
+        assert not terminated.any()
+        np.testing.assert_array_equal(obs["map"][0], obs["map"][1])
+        np.testing.assert_array_equal(obs["vec"][0], obs["vec"][1])
 
 
 def test_entering_flag_room_ends_episode_and_resets():
@@ -64,7 +77,7 @@ def test_spiral_covers_square_without_revisits():
 def test_memory_matches_true_infinite_grid(drift):
     """원환 배열로 접은 기억이 진짜 무한 격자(집합)와 똑같이 보이는지 확인한다.
     drift > 0 이면 한쪽으로 멀리 걸어가서 배열 경계를 여러 번 넘는다."""
-    cfg = BackroomConfig(hint="sound", max_steps=40, view_radius=6, flag_range=3, sound_noise=0.0)
+    cfg = BackroomConfig(max_steps=40, view_radius=6, flag_range=3)
     n = 16
     env = BackroomVecEnv(cfg, n_envs=n, seed=2)
     obs = env.reset()
@@ -87,35 +100,24 @@ def test_memory_matches_true_infinite_grid(drift):
             np.testing.assert_array_equal(obs["map"][i, 0], expect)
 
 
-def test_sound_level_without_noise():
-    cfg = BackroomConfig(hint="sound", sound_noise=0.0)
-    env = BackroomVecEnv(cfg, n_envs=1, seed=0)
-    env.reset()
-    env.flag[0] = (3, 0)
-    env.step([RIGHT])
-    env.step([RIGHT])  # 거리 1
-    assert env.last_sound[0] == pytest.approx(0.5)
-
-
 def test_evaluation_uses_same_layouts_for_every_agent():
-    cfg = BackroomConfig(hint="sound")
+    cfg = BackroomConfig()
     a = BackroomVecEnv(cfg, n_envs=20, seed=7)
     b = BackroomVecEnv(cfg, n_envs=20, seed=7)
     a.reset(), b.reset()
     np.testing.assert_array_equal(a.flag, b.flag)
 
 
-def test_baselines_always_escape():
-    cfg = BackroomConfig(hint="sound")
+def test_spiral_always_escapes():
+    cfg = BackroomConfig()
     assert evaluate(lambda env: SpiralAgent(cfg.max_steps), cfg, 200).success_rate == 1.0
-    assert evaluate(lambda env: BayesSearchAgent(env), cfg, 200).success_rate == 1.0
 
 
 def test_policy_agent_runs():
     cfg = BackroomConfig()
     env = BackroomVecEnv(cfg, n_envs=3, seed=0)
     obs = env.reset()
-    assert obs["map"].shape == (3, 3, cfg.view_size, cfg.view_size)
+    assert obs["map"].shape == (3, MAP_CHANNELS, cfg.view_size, cfg.view_size)
     assert obs["vec"].shape == (3, VEC_DIM)
     logits, value = ActorCritic(cfg.view_size)(torch.from_numpy(obs["map"]), torch.from_numpy(obs["vec"]))
     assert logits.shape == (3, 4) and value.shape == (3,)
@@ -136,7 +138,7 @@ def test_short_training_run_saves_loadable_checkpoint(tmp_path):
         def flush(self):
             pass
 
-    cfg = BackroomConfig(hint="sound")
+    cfg = BackroomConfig()
     writer = Recorder()
     out = tmp_path / "ppo.pt"
     ppo = PPOConfig(total_steps=8 * 16 * 2, n_envs=8, n_steps=16, minibatches=2, epochs=1)
@@ -144,7 +146,7 @@ def test_short_training_run_saves_loadable_checkpoint(tmp_path):
     assert {"loss/policy", "speed/steps_per_sec"} <= writer.tags
 
     model, ckpt = load_checkpoint(out, device="auto")
-    assert ckpt["env_config"]["hint"] == "sound"
+    assert ckpt["env_config"] == cfg.to_dict()
     assert next(model.parameters()).device.type == resolve_device("auto").type
     assert evaluate(lambda env: PolicyAgent(model), cfg, 4).steps.shape == (4,)
 
@@ -160,3 +162,13 @@ def test_resume_continues_step_count(tmp_path):
     assert first["steps"] == 128 and "optimizer" in first
     train(cfg, ppo, str(out), device="cpu", log=lambda *_: None, resume=first)
     assert torch.load(out, weights_only=False)["steps"] == 256
+
+
+def test_old_sound_checkpoint_gives_clear_error(tmp_path):
+    from backroom.model import load_checkpoint, save_checkpoint
+
+    cfg = BackroomConfig()
+    out = tmp_path / "old.pt"
+    save_checkpoint(out, ActorCritic(cfg.view_size), {**cfg.to_dict(), "hint": "sound", "sound_noise": 0.1})
+    with pytest.raises(SystemExit, match="다시 학습"):
+        load_checkpoint(out)
