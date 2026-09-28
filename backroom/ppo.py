@@ -19,7 +19,9 @@ class PPOConfig:
     n_envs: int = 64
     n_steps: int = 128
     gamma: float = 0.995
-    gae_lambda: float = 0.95
+    # 몇 걸음 뒤의 결과까지 지금 행동의 공으로 칠지. 0.95 처럼 짧으면 "당장 새 방이 많이 나오는 한 방향 직진"을
+    # 좋게 평가해서 학습 초반에 그 습관에 굳기 쉽다. 후보 영역을 다 훑는 데 100 걸음 넘게 걸리므로 길게 본다.
+    gae_lambda: float = 0.99
     lr: float = 3e-4
     epochs: int = 4
     minibatches: int = 8

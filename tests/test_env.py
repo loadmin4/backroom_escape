@@ -41,7 +41,7 @@ def test_no_clue_near_flag():
 
 
 def test_entering_flag_room_ends_episode_and_resets():
-    cfg = BackroomConfig()
+    cfg = BackroomConfig(dense_reward=False)
     env = BackroomVecEnv(cfg, n_envs=1, seed=0)
     env.reset()
     env.flag[0] = (1, 0)
@@ -50,6 +50,30 @@ def test_entering_flag_room_ends_episode_and_resets():
     assert reward[0] == pytest.approx(cfg.flag_reward - cfg.step_penalty)
     assert info["done_len"].tolist() == [1] and info["done_success"].tolist() == [True]
     assert env.t[0] == 0 and tuple(env.pos[0]) == (0, 0)
+
+
+def test_dense_reward_pays_flag_probability_for_new_candidate_rooms():
+    cfg = BackroomConfig(flag_range=1)  # 후보 방 8개
+    env = BackroomVecEnv(cfg, n_envs=1, seed=0)
+    env.reset()
+    env.flag[0] = (-1, -1)
+    rewards = [env.step([a])[1][0] + cfg.step_penalty for a in (RIGHT, UP, LEFT, LEFT, RIGHT, RIGHT, RIGHT)]
+    # 새 후보 방 4개는 1/8, 1/7, 1/6, 1/5. 되돌아간 방 두 번과 후보 영역 밖 (2, 1) 은 0
+    assert rewards == pytest.approx([1 / 8, 1 / 7, 1 / 6, 1 / 5, 0.0, 0.0, 0.0])
+
+
+def test_dense_reward_has_same_mean_as_flag_reward():
+    """회차당 보상 합의 평균이 flag 보상(찾으면 1)과 같다: 나선 탐색은 항상 찾으므로 둘 다 1."""
+    cfg = BackroomConfig(step_penalty=0.0)
+    env = BackroomVecEnv(cfg, n_envs=2000, seed=3)
+    env.reset()
+    agent = SpiralAgent(cfg.max_steps)
+    total, done = np.zeros(env.n), np.zeros(env.n, dtype=bool)
+    while not done.all():
+        _, reward, terminated, truncated, _ = env.step(agent.act(None, env))
+        total += np.where(done, 0.0, reward)
+        done |= terminated | truncated
+    assert total.mean() == pytest.approx(1.0, abs=0.05)
 
 
 def test_time_limit():

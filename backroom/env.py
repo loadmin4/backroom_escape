@@ -42,6 +42,12 @@ class BackroomConfig:
     view_radius: int = 12
     step_penalty: float = 0.01
     flag_reward: float = 1.0
+    # True: flag 보상을 "기댓값"으로 나눠 준다. 처음 들어가는 후보 방마다, 그 방에 flag 가 있을 확률
+    #       (= 1 / 아직 안 가 본 후보 방 수) x flag_reward 를 준다. 회차가 flag 를 찾는 순간 끝나므로
+    #       한 회차에서 받을 보상의 평균은 False 일 때와 수학적으로 똑같다(목표가 바뀌지 않는다).
+    #       대신 신호가 매 걸음 와서, 학습 초반에 "한 방향으로만 가기" 같은 습관에 굳지 않고 안정적으로 배운다.
+    # False: flag 방에 들어갔을 때만 flag_reward 를 준다.
+    dense_reward: bool = True
 
     def __post_init__(self):
         if self.flag_range < 1:
@@ -87,6 +93,7 @@ class BackroomVecEnv:
         self.flag = np.zeros((n_envs, 2), dtype=np.int64)
         self.world_start = np.zeros((n_envs, 2), dtype=np.int64)
         self.t = np.zeros(n_envs, dtype=np.int64)
+        self.unvisited = np.zeros(n_envs, dtype=np.int64)  # 아직 안 가 본 후보 방 수
 
         r = config.view_radius
         self._offsets = np.arange(-r, r + 1)
@@ -103,6 +110,7 @@ class BackroomVecEnv:
         self.visits[i] = 0
         self.pos[i] = 0
         self.t[i] = 0
+        self.unvisited[i] = cfg.n_candidates
         # 월드 좌표상의 시작점. 방이 모두 똑같으므로 에이전트에게는 보이지 않는다.
         self.world_start[i] = self.layout_rng.integers(-10**9, 10**9, size=2)
         k = self.layout_rng.integers(cfg.n_candidates)
@@ -119,9 +127,16 @@ class BackroomVecEnv:
         self.t += 1
 
         found = np.all(self.pos == self.flag, axis=1)
+        if cfg.dense_reward:
+            new_room = self.visits[self._idx, self.pos[:, 1] % self._P, self.pos[:, 0] % self._P] == 0
+            candidate = new_room & (np.abs(self.pos).max(axis=1) <= cfg.flag_range)
+            flag_part = np.where(candidate, cfg.flag_reward / np.maximum(self.unvisited, 1), 0.0)
+            self.unvisited -= candidate
+        else:
+            flag_part = np.where(found, cfg.flag_reward, 0.0)
         self._enter(self._idx[~found])
 
-        reward = np.where(found, cfg.flag_reward, 0.0) - cfg.step_penalty
+        reward = flag_part - cfg.step_penalty
         terminated = found
         truncated = ~found & (self.t >= cfg.max_steps)
         done = terminated | truncated
@@ -155,7 +170,9 @@ class BackroomVecEnv:
         lo, hi = r - LOCAL_RADIUS, r + LOCAL_RADIUS + 1
         vec = np.concatenate(
             [
-                self.pos / cfg.flag_range,
+                # 멀리 가도 입력이 한없이 커지지 않게 후보 영역의 두 배(±2)에서 자른다. 돌아올 방향은 그대로 알 수 있다.
+                # 자르지 않으면 한쪽으로 멀리 간 에이전트의 신경망 출력이 극단적으로 변해서 학습이 무너지기 쉽다.
+                np.clip(self.pos / cfg.flag_range, -2.0, 2.0),
                 (self.t / cfg.max_steps)[:, None],
                 grid[:, :, lo:hi, lo:hi].reshape(self.n, -1),
             ],
